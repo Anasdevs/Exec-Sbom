@@ -19,8 +19,10 @@ def analyze_pe_file(file_path):
         }
 
         # Verify digital signature
-        signature_status = verify_digital_signature(file_path)
+        signature_status, publisher = verify_digital_signature(file_path)
         metadata["Digital_Signature"] = signature_status
+        metadata["Publisher"] = publisher
+     
 
         dependencies = []
 
@@ -42,29 +44,40 @@ def analyze_pe_file(file_path):
         return {"Error": str(e)}
 
 
+
 def verify_digital_signature(file_path):
     try:
-        # Run osslsigncode to verify digital signature
-        result = subprocess.run(['osslsigncode', 'verify', file_path], capture_output=True, text=True)
-        output = result.stdout
+        # Run PowerShell command to verify digital signature and retrieve publisher
+        ps_command = f"powershell.exe -Command \"& {{$file = '{file_path}'; $signature = Get-AuthenticodeSignature -FilePath $file; if ($signature.Status -eq 'Valid') {{ 'Valid' }} elseif ($signature.Status -eq 'NotSigned') {{ 'NotSigned' }} else {{ 'Invalid' }}; $signature.SignerCertificate.Subject}}\""
+        result = subprocess.run(ps_command, capture_output=True, text=True, shell=True)
 
-        # Check if "Signature verified successfully" is present in the output
-        if "Signature verified successfully" in output:
-            return "Valid"
-        else:
-            return "Invalid"
+        if result.returncode != 0:
+            print(f"PowerShell error: {result.stderr}")
+            return "Verification failed", None
+
+        try:
+            output_lines = result.stdout.splitlines()
+            signature_status = output_lines[0].strip()
+            publisher = output_lines[1].strip()
+            return signature_status, publisher
+        except IndexError:
+            print("Error: Signature status or publisher information could not be retrieved.")
+            return "Signature cannot be verified", None
+        except Exception as e:
+            print(f"Error verifying digital signature: {e}")
+            return "Signature cannot be verified", None
 
     except Exception as e:
         print(f"Error verifying digital signature: {e}")
-        return "Verification failed"
+        return "Verification failed", None
 
 
 def query_nvd_api(dll_name):
     vulnerabilities = []
     start_index = 0
-    results_per_page = 30  # Number of results per page
+    results_per_page = 100  # Number of results per page to get more results in one query
 
-    while True:
+    while len(vulnerabilities) < 20:
         try:
             url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&startIndex={start_index}&resultsPerPage={results_per_page}"
             print("Querying NVD API for:", dll_name)
@@ -88,11 +101,10 @@ def query_nvd_api(dll_name):
             print(f"Error querying NVD API for {dll_name}: {e}")
             break
 
-    return vulnerabilities
-
+    return vulnerabilities[:20]  # Return at least 20 results
 
 def main():
-    exe_path = "testexe.exe"  # Specify your local exe file path here
+    exe_path = "mysqlinstaller.msi"  # Specify your local exe file path here
     if not os.path.exists(exe_path):
         print(f"File {exe_path} does not exist.")
         return
@@ -102,7 +114,6 @@ def main():
         json.dump(result, f, indent=4)
 
     print("Analysis saved to output.json")
-
 
 if __name__ == '__main__':
     main()
