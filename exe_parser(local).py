@@ -2,7 +2,6 @@ import os
 import pefile
 import requests
 import json
-import time
 import subprocess
 
 def analyze_pe_file(file_path):
@@ -19,31 +18,52 @@ def analyze_pe_file(file_path):
         }
 
         # Verify digital signature
+        print("Verifying digital signature...")
         signature_status, publisher = verify_digital_signature(file_path)
         metadata["Digital_Signature"] = signature_status
         metadata["Publisher"] = publisher
-     
+        print(f"Digital Signature Status: {signature_status}")
+        print(f"Publisher: {publisher}")
 
+        # Get DLLs and functions
         dependencies = []
-
-        # Analyze the import table
         for entry in pe.DIRECTORY_ENTRY_IMPORT:
             dll_name = entry.dll.decode('utf-8').lower()
             functions = [imp.name.decode('utf-8') if imp.name else "Ordinal {}".format(imp.ordinal) for imp in entry.imports]
             dependencies.append({"DLL": dll_name, "Functions": functions})
+        print("Extracted DLLs and Functions:")
+        for dep in dependencies:
+            print(f"DLL: {dep['DLL']}")
+            print(f"Functions: {', '.join(dep['Functions'])}")
 
+        # Query NVD API for vulnerabilities
         vulnerabilities = []
         for dependency in dependencies:
             dll_name = dependency["DLL"]
-            vulnerability_info = query_nvd_api(dll_name)
-            vulnerabilities.append({"DLL": dll_name, "Vulnerabilities": vulnerability_info})
-
+            print(f"Querying NVD API for vulnerabilities related to {dll_name}...")
+            cve_ids = query_cve_ids_for_dll(dll_name)
+            print(f"Found {len(cve_ids)} CVE IDs for {dll_name}")
+            for cve_id in cve_ids:
+                print(f"Querying CVE info for {cve_id}...")
+                cve_info = query_cve_info(cve_id)
+                if cve_info:
+                    affected_resources = cve_info.get("containers", {}).get("cna", {}).get("affected", [])
+                    for resource in affected_resources:
+                        if publisher in resource.get("product", ""):
+                            vulnerabilities.append({"CVE_ID": cve_id, "CVE_Info": cve_info})
+                            print(f"Vulnerability {cve_id} affects the publisher")
+                            break
+                    else:
+                        print(f"Vulnerability {cve_id} does not affect the publisher")
+                else:
+                    print(f"No CVE info found for {cve_id}")
+        
+        print("Analysis completed successfully.")
         return {"Metadata": metadata, "Dependencies": dependencies, "Vulnerabilities": vulnerabilities}
 
     except Exception as e:
+        print(f"Error analyzing PE file: {e}")
         return {"Error": str(e)}
-
-
 
 def verify_digital_signature(file_path):
     try:
@@ -71,40 +91,32 @@ def verify_digital_signature(file_path):
         print(f"Error verifying digital signature: {e}")
         return "Verification failed", None
 
+def query_cve_ids_for_dll(dll_name):
+    try:
+        url = f"https://services.nvd.nist.gov/rest/json/cves/1.0?keyword={dll_name}&startIndex=0&resultsPerPage=50"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        cve_entries = data.get("result", {}).get("CVE_Items", [])
+        cve_ids = [entry.get("cve", {}).get("CVE_data_meta", {}).get("ID") for entry in cve_entries]
+        return cve_ids
+    except Exception as e:
+        print(f"Error querying NVD API for CVE IDs: {e}")
+        return []
 
-def query_nvd_api(dll_name):
-    vulnerabilities = []
-    start_index = 0
-    results_per_page = 100  # Number of results per page to get more results in one query
-
-    while len(vulnerabilities) < 20:
-        try:
-            url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&startIndex={start_index}&resultsPerPage={results_per_page}"
-            print("Querying NVD API for:", dll_name)
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            current_vulnerabilities = data.get("vulnerabilities", [])
-
-            if not current_vulnerabilities:
-                break
-
-            vulnerabilities.extend(current_vulnerabilities)
-            start_index += results_per_page
-
-            if len(current_vulnerabilities) < results_per_page:
-                break
-
-            time.sleep(1)  # To avoid hitting API rate limits
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error querying NVD API for {dll_name}: {e}")
-            break
-
-    return vulnerabilities[:20]  # Return at least 20 results
+def query_cve_info(cve_id):
+    try:
+        url = f"https://cveawg.mitre.org/api/cve/{cve_id}"
+        response = requests.get(url)
+        response.raise_for_status()
+        cve_info = response.json()
+        return cve_info
+    except Exception as e:
+        print(f"Error querying CVE info for {cve_id}: {e}")
+        return {}
 
 def main():
-    exe_path = "mysqlinstaller.msi"  # Specify your local exe file path here
+    exe_path = "ChromeSetup.exe"  # Specify your local exe file path here
     if not os.path.exists(exe_path):
         print(f"File {exe_path} does not exist.")
         return

@@ -1,0 +1,15 @@
+{
+    "Metadata": {
+        "ALLUSERS": "1",
+        "ARPPRODUCTICON": "InstallerIcon.exe",
+        "Manufacturer": "Oracle Corporation",
+        "ProductCode": "{085F7E67-E598-4B40-A5E4-3E94032476DA}",
+        "ProductLanguage": "1033",
+        "ProductName": "MySQL Installer",
+        "ProductVersion": "1.6.10.0",
+        "UpgradeCode": "{18B94B70-06F1-4AC0-B308-37280DB868C2}",
+        "SecureCustomProperties": "NEWERVERSIONDETECTED;OLDERVERSIONBEINGUPGRADED;OLDINSTALLERDETECTED;WIX_IS_NETFRAMEWORK_452_OR_LATER_INSTALLED;WIXNETFX4RELEASEINSTALLED"
+    },
+    "Dependencies": [],
+    "Vulnerabilities": []
+}
