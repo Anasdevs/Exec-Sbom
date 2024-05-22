@@ -32,9 +32,6 @@ def analyze_pe_file(file_path):
             functions = [imp.name.decode('utf-8') if imp.name else "Ordinal {}".format(imp.ordinal) for imp in entry.imports]
             dependencies.append({"DLL": dll_name, "Functions": functions})
         print("Extracted DLLs and Functions:")
-        for dep in dependencies:
-            print(f"DLL: {dep['DLL']}")
-            print(f"Functions: {', '.join(dep['Functions'])}")
 
         # Query NVD API for vulnerabilities
         vulnerabilities = []
@@ -93,8 +90,10 @@ def verify_digital_signature(file_path):
 
 def query_cve_ids_for_dll(dll_name):
     try:
-        url = f"https://services.nvd.nist.gov/rest/json/cves/1.0?keyword={dll_name}&startIndex=0&resultsPerPage=50"
+        url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&startIndex=0&resultsPerPage=50"
+        print(url)
         response = requests.get(url)
+        # print(response.json())
         response.raise_for_status()
         data = response.json()
         cve_entries = data.get("result", {}).get("CVE_Items", [])
