@@ -3,6 +3,7 @@ import pefile
 import requests
 import json
 import subprocess
+import re
 
 def analyze_pe_file(file_path):
     try:
@@ -29,7 +30,7 @@ def analyze_pe_file(file_path):
         dependencies = []
         for entry in pe.DIRECTORY_ENTRY_IMPORT:
             dll_name = entry.dll.decode('utf-8').lower()
-            functions = [imp.name.decode('utf-8') if imp.name else "Ordinal {}".format(imp.ordinal) for imp in entry.imports]
+            functions = [imp.name.decode('utf-8') if imp.name else f"Ordinal {imp.ordinal}" for imp in entry.imports]
             dependencies.append({"DLL": dll_name, "Functions": functions})
         print("Extracted DLLs and Functions:")
 
@@ -38,22 +39,21 @@ def analyze_pe_file(file_path):
         for dependency in dependencies:
             dll_name = dependency["DLL"]
             print(f"Querying NVD API for vulnerabilities related to {dll_name}...")
-            cve_ids = query_cve_ids_for_dll(dll_name)
-            print(f"Found {len(cve_ids)} CVE IDs for {dll_name}")
-            for cve_id in cve_ids:
-                print(f"Querying CVE info for {cve_id}...")
-                cve_info = query_cve_info(cve_id)
-                if cve_info:
-                    affected_resources = cve_info.get("containers", {}).get("cna", {}).get("affected", [])
-                    for resource in affected_resources:
-                        if publisher in resource.get("product", ""):
-                            vulnerabilities.append({"CVE_ID": cve_id, "CVE_Info": cve_info})
-                            print(f"Vulnerability {cve_id} affects the publisher")
-                            break
-                    else:
-                        print(f"Vulnerability {cve_id} does not affect the publisher")
-                else:
-                    print(f"No CVE info found for {cve_id}")
+            cve_items = query_cve_items_for_dll(dll_name)
+            print(f"Found {len(cve_items)} CVE items for {dll_name}")
+            if cve_items:
+                for cve_item in cve_items:
+                    cve_id = cve_item.get("cve", {}).get("id")
+                    description = cve_item.get("cve", {}).get("descriptions", [{}])[0].get("value", "")
+                    extracted_functions = extract_functions_from_description(description)
+                    vulnerabilities.append({
+                        "DLL": dll_name,
+                        "CVE_ID": cve_id,
+                        "Description": description,
+                        "Functions": extracted_functions
+                    })
+            else:
+                print(f"No vulnerabilities found for {dll_name}")
         
         print("Analysis completed successfully.")
         return {"Metadata": metadata, "Dependencies": dependencies, "Vulnerabilities": vulnerabilities}
@@ -64,7 +64,6 @@ def analyze_pe_file(file_path):
 
 def verify_digital_signature(file_path):
     try:
-        # Run PowerShell command to verify digital signature and retrieve publisher
         ps_command = f"powershell.exe -Command \"& {{$file = '{file_path}'; $signature = Get-AuthenticodeSignature -FilePath $file; if ($signature.Status -eq 'Valid') {{ 'Valid' }} elseif ($signature.Status -eq 'NotSigned') {{ 'NotSigned' }} else {{ 'Invalid' }}; $signature.SignerCertificate.Subject}}\""
         result = subprocess.run(ps_command, capture_output=True, text=True, shell=True)
 
@@ -72,50 +71,42 @@ def verify_digital_signature(file_path):
             print(f"PowerShell error: {result.stderr}")
             return "Verification failed", None
 
-        try:
-            output_lines = result.stdout.splitlines()
-            signature_status = output_lines[0].strip()
-            publisher = output_lines[1].strip()
-            return signature_status, publisher
-        except IndexError:
-            print("Error: Signature status or publisher information could not be retrieved.")
-            return "Signature cannot be verified", None
-        except Exception as e:
-            print(f"Error verifying digital signature: {e}")
-            return "Signature cannot be verified", None
+        output_lines = result.stdout.splitlines()
+        signature_status = output_lines[0].strip()
+        publisher = output_lines[1].strip()
+        return signature_status, publisher
 
     except Exception as e:
         print(f"Error verifying digital signature: {e}")
         return "Verification failed", None
 
-def query_cve_ids_for_dll(dll_name):
+def query_cve_items_for_dll(dll_name):
     try:
-        url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&startIndex=0&resultsPerPage=50"
-        print(url)
+        url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&resultsPerPage=10&startIndex=0"
+        print(f"URL IS: {url}")
         response = requests.get(url)
-        # print(response.json())
         response.raise_for_status()
         data = response.json()
-        cve_entries = data.get("result", {}).get("CVE_Items", [])
-        cve_ids = [entry.get("cve", {}).get("CVE_data_meta", {}).get("ID") for entry in cve_entries]
-        return cve_ids
+        print("Data is:", data)
+        return data.get("result", {}).get("CVE_Items", [])
     except Exception as e:
-        print(f"Error querying NVD API for CVE IDs: {e}")
+        print(f"Error querying NVD API for DLL {dll_name}: {e}")
         return []
 
-def query_cve_info(cve_id):
+def extract_functions_from_description(description):
     try:
-        url = f"https://cveawg.mitre.org/api/cve/{cve_id}"
-        response = requests.get(url)
-        response.raise_for_status()
-        cve_info = response.json()
-        return cve_info
+        functions = []
+        description = description.lower()
+        matches = re.findall(r'\bfunction\b\s*(\w+)', description) + re.findall(r'(\w+)\s*\bfunction\b', description)
+        functions.extend(matches)
+        return list(set(functions))  # Return unique function names
+
     except Exception as e:
-        print(f"Error querying CVE info for {cve_id}: {e}")
-        return {}
+        print(f"Error extracting functions from description: {e}")
+        return []
 
 def main():
-    exe_path = "ChromeSetup.exe"  # Specify your local exe file path here
+    exe_path = "CleanupInst.exe"  # Specify your local exe file path here
     if not os.path.exists(exe_path):
         print(f"File {exe_path} does not exist.")
         return
