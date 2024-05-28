@@ -87,6 +87,18 @@
                 "GetCommandLineA",
                 "GetVersion",
                 "HeapFree"
+            ],
+            "Vulnerabilities": [
+                {
+                    "CVE_ID": "CVE-2007-4528",
+                    "Description": "The Foreign Function Interface (ffi) extension in PHP 5.0.5 does not follow safe_mode restrictions, which allows context-dependent attackers to execute arbitrary code by loading an arbitrary DLL and calling a function, as demonstrated by kernel32.dll and the WinExec function.  NOTE: this issue does not cross privilege boundaries in most contexts, so perhaps it should not be included in CVE.",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2007-5145",
+                    "Description": "Multiple buffer overflows in system DLL files in Microsoft Windows XP, as used by Microsoft Windows Explorer (explorer.exe) 6.00.2900.2180, Don Ho Notepad++, unspecified Adobe Macromedia applications, and other programs, allow user-assisted remote attackers to cause a denial of service (application crash) via long strings in the (1) author, (2) title, (3) subject, and (4) comment Properties fields of a file, possibly involving improper handling of extended file attributes by the (a) NtQueryInformationFile, (b) NtQueryDirectoryFile, (c) NtSetInformationFile, (d) FileAllInformation, (e) FileNameInformation, and other FILE_INFORMATION_CLASS functions in ntdll.dll and the (f) GetFileAttributesExW and (g) GetFileAttributesW functions in kernel32.dll, a related issue to CVE-2007-1347.",
+                    "Matched_Functions": []
+                }
             ]
         },
         {
@@ -125,6 +137,28 @@
                 "LoadCursorA",
                 "RegisterClassA",
                 "CreateDialogParamA"
+            ],
+            "Vulnerabilities": [
+                {
+                    "CVE_ID": "CVE-2003-0659",
+                    "Description": "Buffer overflow in a function in User32.dll on Windows NT through Server 2003 allows local users to execute arbitrary code via long (1) LB_DIR messages to ListBox or (2) CB_DIR messages to ComboBox controls in a privileged application.",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2005-1793",
+                    "Description": "User32.DLL in Microsoft Windows 98SE, and possibly other operating systems, allows local and remote attackers to cause a denial of service (crash) via an icon (.ico) bitmap file with large width and height values.",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2010-3914",
+                    "Description": "Untrusted search path vulnerability in VIM Development Group GVim before 7.3.034, and possibly other versions before 7.3.46, allows local users, and possibly remote attackers, to execute arbitrary code and conduct DLL hijacking attacks via a Trojan horse User32.dll or other DLL that is located in the same folder as a .TXT file.  NOTE: some of these details are obtained from third party information.",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2022-47636",
+                    "Description": "A DLL hijacking vulnerability has been discovered in OutSystems Service Studio 11 11.53.30 build 61739. When a user open a .oml file (OutSystems Modeling Language), the application will load the following DLLs from the same directory av_libGLESv2.dll, libcef.DLL, user32.dll, and d3d10warp.dll. Using a crafted DLL, it is possible to execute arbitrary code in the context of the current logged in user.",
+                    "Matched_Functions": []
+                }
             ]
         },
         {
@@ -142,8 +176,29 @@
                 "SetTextColor",
                 "SaveDC",
                 "RestoreDC"
+            ],
+            "Vulnerabilities": [
+                {
+                    "CVE_ID": "CVE-2005-0803",
+                    "Description": "The GetEnhMetaFilePaletteEntries API in GDI32.DLL in Windows 2000 allows remote attackers to cause a denial of service (application crash) via a crafted Enhanced Metafile (EMF) file that causes invalid (1) end, (2) emreof, or (3) palent offsets to be used, aka \"Enhanced Metafile Vulnerability.\"",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2016-0008",
+                    "Description": "The graphics device interface in Microsoft Windows Vista SP2, Windows Server 2008 SP2 and R2 SP1, Windows 7 SP1, Windows 8, Windows 8.1, Windows Server 2012 Gold and R2, and Windows RT Gold and 8.1 allows remote attackers to bypass the ASLR protection mechanism via unspecified vectors, aka \"Windows GDI32.dll ASLR Bypass Vulnerability.\"",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2016-3216",
+                    "Description": "GDI32.dll in the Graphics component in Microsoft Windows Vista SP2, Windows Server 2008 SP2 and R2 SP1, Windows 7 SP1, Windows 8.1, Windows Server 2012 Gold and R2, Windows RT 8.1, and Windows 10 Gold and 1511 allows remote attackers to bypass the ASLR protection mechanism via unspecified vectors, aka \"Windows Graphics Component Information Disclosure Vulnerability.\"",
+                    "Matched_Functions": []
+                },
+                {
+                    "CVE_ID": "CVE-2017-0038",
+                    "Description": "gdi32.dll in Graphics Device Interface (GDI) in Microsoft Windows Vista SP2, Windows Server 2008 SP2 and R2 SP1, Windows 7 SP1, Windows 8.1, Windows Server 2012 Gold and R2, Windows RT 8.1, and Windows 10 Gold, 1511, and 1607 allows remote attackers to obtain sensitive information from process heap memory via a crafted EMF file, as demonstrated by an EMR_SETDIBITSTODEVICE record with modified Device Independent Bitmap (DIB) dimensions. NOTE: this vulnerability exists because of an incomplete fix for CVE-2016-3216, CVE-2016-3219, and/or CVE-2016-3220.",
+                    "Matched_Functions": []
+                }
             ]
         }
-    ],
-    "Vulnerabilities": []
+    ]
 }

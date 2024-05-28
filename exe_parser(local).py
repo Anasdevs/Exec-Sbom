@@ -34,29 +34,26 @@ def analyze_pe_file(file_path):
             dependencies.append({"DLL": dll_name, "Functions": functions})
         print("Extracted DLLs and Functions:")
 
-        # Query NVD API for vulnerabilities
-        vulnerabilities = []
+        # Query NVD API for vulnerabilities and find matching functions
         for dependency in dependencies:
             dll_name = dependency["DLL"]
             print(f"Querying NVD API for vulnerabilities related to {dll_name}...")
             cve_items = query_cve_items_for_dll(dll_name)
             print(f"Found {len(cve_items)} CVE items for {dll_name}")
-            if cve_items:
-                for cve_item in cve_items:
-                    cve_id = cve_item.get("cve", {}).get("id")
-                    description = cve_item.get("cve", {}).get("descriptions", [{}])[0].get("value", "")
-                    extracted_functions = extract_functions_from_description(description)
-                    vulnerabilities.append({
-                        "DLL": dll_name,
-                        "CVE_ID": cve_id,
-                        "Description": description,
-                        "Functions": extracted_functions
-                    })
-            else:
-                print(f"No vulnerabilities found for {dll_name}")
-        
+            vulnerabilities = []
+            for cve_item in cve_items:
+                cve_id = cve_item.get("cve", {}).get("id")
+                description = cve_item.get("cve", {}).get("descriptions", [{}])[0].get("value", "")
+                matched_functions = find_matching_functions(description, dependency["Functions"])
+                vulnerabilities.append({
+                    "CVE_ID": cve_id,
+                    "Description": description,
+                    "Matched_Functions": matched_functions
+                })
+            dependency["Vulnerabilities"] = vulnerabilities
+
         print("Analysis completed successfully.")
-        return {"Metadata": metadata, "Dependencies": dependencies, "Vulnerabilities": vulnerabilities}
+        return {"Metadata": metadata, "Dependencies": dependencies}
 
     except Exception as e:
         print(f"Error analyzing PE file: {e}")
@@ -82,27 +79,26 @@ def verify_digital_signature(file_path):
 
 def query_cve_items_for_dll(dll_name):
     try:
-        url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&resultsPerPage=10&startIndex=0"
+        url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={dll_name}&keywordExactMatch"
         print(f"URL IS: {url}")
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
-        print("Data is:", data)
-        return data.get("result", {}).get("CVE_Items", [])
+        return data.get("vulnerabilities", [])
     except Exception as e:
         print(f"Error querying NVD API for DLL {dll_name}: {e}")
         return []
 
-def extract_functions_from_description(description):
+def find_matching_functions(description, functions):
     try:
-        functions = []
+        matched_functions = []
         description = description.lower()
-        matches = re.findall(r'\bfunction\b\s*(\w+)', description) + re.findall(r'(\w+)\s*\bfunction\b', description)
-        functions.extend(matches)
-        return list(set(functions))  # Return unique function names
-
+        for func in functions:
+            if re.search(r'\b' + re.escape(func.lower()) + r'\b', description):
+                matched_functions.append(func)
+        return matched_functions
     except Exception as e:
-        print(f"Error extracting functions from description: {e}")
+        print(f"Error finding matching functions: {e}")
         return []
 
 def main():
