@@ -4,29 +4,23 @@ import re
 import requests
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import sys
+import time
 
 # Define constants for CVE query API
 CVE_API_URL = "https://cveawg.mitre.org/api/cve/{}"
 
 # Helper function to run shell commands
-def run_command(command):
+def run_command(command, capture_output=True, check=False):
     try:
-        print(f"Running command: {command}")
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        if result.returncode != 0:
-            return None
-        return result.stdout.strip()
-    except Exception as e:
-        print(f"Error executing command: {e}")
+        if capture_output:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, check=check)
+            return result.stdout.strip() if result.returncode == 0 else None
+        else:
+            subprocess.run(command, shell=True, check=check)
+    except subprocess.CalledProcessError:
         return None
-
-# Install Debsecan
-def install_debsecan():
-    print("Checking if Debsecan is installed...")
-    if run_command("dpkg -l | grep debsecan") is None:
-        print("Debsecan not found. Installing...")
-        command = "sudo apt-get install -y debsecan"
-        run_command(command)
 
 # Get OS metadata
 def get_os_metadata():
@@ -45,10 +39,12 @@ def get_os_metadata():
 
 # Function to query CVE details
 def query_cve_details(cve_id):
-    print(f"Querying CVE details for {cve_id}...")
-    response = requests.get(CVE_API_URL.format(cve_id))
-    if response.status_code == 200:
-        return cve_id, response.json()
+    try:
+        response = requests.get(CVE_API_URL.format(cve_id), timeout=10)
+        if response.status_code == 200:
+            return cve_id, response.json()
+    except requests.RequestException:
+        pass
     return cve_id, None
 
 # Function to parse debsecan output and identify vulnerabilities
@@ -94,8 +90,9 @@ def process_package(package_name, package_info):
     }
 
     if package_info["cves"]:
+        cves_to_query = list(package_info["cves"])[:3]  # Limit to 3 CVEs
         with ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_cve = {executor.submit(query_cve_details, cve_id): cve_id for cve_id in package_info["cves"][:3]}
+            future_to_cve = {executor.submit(query_cve_details, cve_id): cve_id for cve_id in cves_to_query}
             for future in as_completed(future_to_cve):
                 cve_id, cve_details = future.result()
                 if cve_details:
@@ -107,7 +104,7 @@ def process_package(package_name, package_info):
                             severity = cvss_info.get("baseSeverity")
                             cvss_score = cvss_info.get("baseScore")
                             break
-                    description = cve_details.get("containers", {}).get("cna", {}).get("descriptions", [{}])[0].get("value", "").replace("\\r\\n", "").replace("\\n", "").strip()
+                    description = cve_details.get("containers", {}).get("cna", {}).get("descriptions", [{}])[0].get("value", "").replace("\\r\\n", "").strip()
 
                     cve_summary = {
                         "cve_id": cve_id,
@@ -117,14 +114,33 @@ def process_package(package_name, package_info):
                     }
                     package_data["cves"].append(cve_summary)
 
-    package_data["cves"] = package_data["cves"][:3]
     return package_data
+
+# Function to install debsecan
+def install_debsecan():
+    print("Installing debsecan...")
+    try:
+        # Update package list
+        subprocess.run(["sudo", "apt-get", "update"], check=True)
+        
+        # Install debsecan non-interactively
+        env = os.environ.copy()
+        env["DEBIAN_FRONTEND"] = "noninteractive"
+        subprocess.run(["sudo", "-E", "apt-get", "install", "-y", "debsecan"], env=env, check=True)
+        
+        print("debsecan installed successfully.")
+    except subprocess.CalledProcessError:
+        print("Failed to install debsecan. Please install it manually and run the script again.")
+        sys.exit(1)
 
 # Main function to generate the SBOM
 def generate_sbom():
     print("Starting SBOM generation...")
-    install_debsecan()
-
+    
+    # Check if debsecan is installed
+    if run_command("which debsecan") is None:
+        install_debsecan()
+    
     os_metadata = get_os_metadata()
 
     print("Running debsecan...")
@@ -137,11 +153,17 @@ def generate_sbom():
 
     print("Processing package data...")
     enriched_packages = []
+    total_packages = len(packages)
+    processed_packages = 0
+    
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_package = {executor.submit(process_package, name, info): name for name, info in packages.items()}
         for future in as_completed(future_to_package):
             package_data = future.result()
             enriched_packages.append(package_data)
+            processed_packages += 1
+            if processed_packages % 10 == 0:
+                print(f"Processed {processed_packages}/{total_packages} packages")
 
     # Sort packages alphabetically by name
     enriched_packages.sort(key=lambda x: x["name"])
