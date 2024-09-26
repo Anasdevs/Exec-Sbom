@@ -1,12 +1,14 @@
 import subprocess
 import json
 import re
+import html
 import requests
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import sys
-import time
+import datetime
+import uuid
 
 # Define constants for CVE query API
 CVE_API_URL = "https://cveawg.mitre.org/api/cve/{}"
@@ -77,7 +79,17 @@ def get_package_dependencies(package_name):
     dependencies = run_command(f"apt-cache depends {package_name} | grep Depends | cut -d: -f2")
     return [dep.strip() for dep in dependencies.split('\n')] if dependencies else []
 
-# Function to process package data
+def clean_description(text):
+    # Unescape HTML entities
+    text = html.unescape(text)
+    # Remove newline characters
+    text = text.replace('\n', ' ')
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text)
+    # Remove any remaining special characters
+    text = re.sub(r'[^\x20-\x7E]', '', text)
+    return text.strip()
+
 def process_package(package_name, package_info):
     print(f"Processing package: {package_name}")
     dependencies = get_package_dependencies(package_name)
@@ -104,11 +116,12 @@ def process_package(package_name, package_info):
                             severity = cvss_info.get("baseSeverity")
                             cvss_score = cvss_info.get("baseScore")
                             break
-                    description = cve_details.get("containers", {}).get("cna", {}).get("descriptions", [{}])[0].get("value", "").replace("\\r\\n", "").strip()
+                    description = cve_details.get("containers", {}).get("cna", {}).get("descriptions", [{}])[0].get("value", "")
+                    cleaned_description = clean_description(description)
 
                     cve_summary = {
                         "cve_id": cve_id,
-                        "description": description,
+                        "description": cleaned_description,
                         "severity": severity,
                         "cvss_score": cvss_score,
                     }
@@ -133,7 +146,6 @@ def install_debsecan():
         print("Failed to install debsecan. Please install it manually and run the script again.")
         sys.exit(1)
 
-# Main function to generate the SBOM
 def generate_sbom():
     print("Starting SBOM generation...")
     
@@ -173,11 +185,41 @@ def generate_sbom():
         "packages": enriched_packages
     }
 
-    print("Writing SBOM to file...")
-    with open("sbom_output.json", "w") as f:
-        json.dump(sbom, f, indent=4)
+    print("SBOM generated successfully.")
 
-    print("SBOM generated successfully and saved as sbom_output.json")
+    # Prompt user for uploading or saving locally
+    upload_choice = input("Do you want to upload the SBOM to your dashboard? (Y/N): ").strip().upper()
+    
+    if upload_choice == 'Y':
+        email = input("Enter your email: ").strip()
+        api_key = input("Enter your API key: ").strip()
+        sbom_name = f"LinuxSbom_{datetime.datetime.now().strftime('%Y-%m-%d')}"
+        sbom['name'] = sbom_name
+        payload = {
+            "email": email,
+            "apiKey": api_key,
+            "sbom": sbom
+        }
+        url = "http://host.docker.internal:8000/api/auth/linux-sbom"
+        print(f"Uploading SBOM '{sbom_name}' to the dashboard...")
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                print("----->> API key verified successfully.")
+                print("----->> SBOM uploaded successfully.")
+                print(f"Response: {response.json()}")
+            else:
+                print(f"Failed to upload SBOM. Status Code: {response.status_code}")
+                print(f"Response: {response.json()}")
+        except requests.exceptions.RequestException as e:
+            print(f"An error occurred while uploading the SBOM: {e}")
+    else:
+        # Save locally using UUID
+        unique_id = str(uuid.uuid4())
+        filename = f"sbom_{unique_id}.json"
+        with open(filename, "w") as f:
+            json.dump(sbom, f, indent=4)
+        print(f"SBOM saved locally as {filename}")
 
 if __name__ == "__main__":
     generate_sbom()
